@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מעקב מניות</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1a1d21; --muted:#6b7280; --up:#15803d; --down:#b91c1c; --line:#e5e7eb; --accent:#1d4ed8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:#111827; color:#fff; padding:16px; }
+  header h1 { margin:0; font-size:22px; }
+  header p { margin:6px 0 0; color:#cbd5e1; font-size:13px; }
+  .tabs { display:flex; gap:8px; padding:12px 16px 0; }
+  .tabs button { flex:1; padding:10px; font-size:16px; font-weight:700; border:1px solid var(--line); border-radius:10px; background:#fff; cursor:pointer; }
+  .tabs button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  main { padding:12px 16px 32px; max-width:900px; margin:0 auto; }
+  .note { color:var(--muted); font-size:13px; margin:8px 0 12px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .card h3 { margin:0 0 2px; font-size:18px; }
+  .card .sym { color:var(--muted); font-size:12px; direction:ltr; text-align:right; }
+  .price { font-size:26px; font-weight:800; margin:8px 0 2px; direction:ltr; text-align:right; }
+  .chg { font-weight:700; }
+  .chg.up { color:var(--up); }
+  .chg.down { color:var(--down); }
+  .chg.flat { color:var(--muted); }
+  canvas.spark { width:100%; height:44px; display:block; margin-top:8px; }
+  .badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .badge { background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; border-radius:999px; padding:3px 9px; font-size:12px; }
+  .badge.warn { background:#fef3c7; color:#92400e; border-color:#fde68a; }
+  .error { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:12px; border-radius:10px; }
+  .empty { color:var(--muted); }
+  table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; margin:12px 0; }
+  th, td { padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-size:14px; }
+  th { background:#f3f4f6; }
+  td.num { direction:ltr; text-align:right; font-variant-numeric: tabular-nums; }
+  h2 { font-size:18px; margin:22px 0 6px; }
+  .scenario { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px; margin:10px 0; }
+  .scenario h3 { margin:0 0 6px; }
+  .scenario p { margin:4px 0; }
+  .disclaimer { color:var(--muted); font-size:13px; margin-top:14px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>מעקב מניות</h1>
+  <p id="generated">טוען נתונים…</p>
+</header>
+<nav class="tabs" aria-label="לשוניות">
+  <button id="tab-us" class="active" type="button">ארה״ב · מעקב</button>
+  <button id="tab-il" type="button">ישראל · ערב מלחמה</button>
+</nav>
+<main>
+  <section id="panel-us">
+    <p class="note">רשימת המעקב: 8 מניות ארה״ב סביב תזת ההנפקה של Anthropic. האיתותים מחושבים לפי אותם כללים כמו בודק ההתראות (תזוזה חדה, תחילת מגמה, חציית ממוצע 20 ימים).</p>
+    <div id="us-grid" class="grid"></div>
+    <div id="us-status"></div>
+  </section>
+
+  <section id="panel-il" class="hidden">
+    <p class="note">כרטיסים חיים (אלביט, מדד ת״א 125, נקסט ויז׳ן) מוצגים רק אם הם קיימים בקובץ הנתונים. שאר החברות בטבלאות למטה מופיעות כנתונים סטטיים מאומתים בלבד — ללא משיכה חיה.</p>
+    <div id="il-grid" class="grid"></div>
+    <div id="il-status"></div>
+
+    <h2>טבלת בסיס מאומתת — 16.10.2026</h2>
+    <table>
+      <thead><tr><th>נכס</th><th>מ־</th><th>ל־</th><th>שינוי</th></tr></thead>
+      <tbody>
+        <tr><td>אלביט</td><td class="num">431.48</td><td class="num">741.61</td><td class="num">+71.9%</td></tr>
+        <tr><td>נקסט ויז׳ן</td><td class="num">107.0</td><td class="num">187.7</td><td class="num">+75.4%</td></tr>
+        <tr><td>פניקס</td><td class="num">76.2</td><td class="num">182.5</td><td class="num">+139.6%</td></tr>
+        <tr><td>מגדל</td><td class="num">7.40</td><td class="num">20.13</td><td class="num">+172.1%</td></tr>
+        <tr><td>בית שמש</td><td class="num">445.7</td><td class="num">800.5</td><td class="num">+79.6%</td></tr>
+        <tr><td>מדד ת״א 125</td><td class="num">2,705</td><td class="num">4,109</td><td class="num">+51.9%</td></tr>
+        <tr><td>דולר / שקל</td><td class="num">3.5566</td><td class="num">3.091</td><td class="num">שקל +13.1%</td></tr>
+      </tbody>
+    </table>
+
+    <h2>חלון המלחמה: 13 עד 24 ביוני 2025</h2>
+    <table>
+      <thead><tr><th>חברה</th><th>שינוי</th></tr></thead>
+      <tbody>
+        <tr><td>פניקס</td><td class="num">+23.98%</td></tr>
+        <tr><td>דיסקונט</td><td class="num">+17.41%</td></tr>
+        <tr><td>מזרחי</td><td class="num">+13.32%</td></tr>
+        <tr><td>בית שמש</td><td class="num">+12.39%</td></tr>
+        <tr><td>רציו</td><td class="num">+11.72%</td></tr>
+        <tr><td>הפועלים</td><td class="num">+10.43%</td></tr>
+        <tr><td>מגדל</td><td class="num">+10.31%</td></tr>
+        <tr><td>לאומי</td><td class="num">+8.96%</td></tr>
+      </tbody>
+    </table>
+
+    <h2>תרחישים</h2>
+    <div class="scenario">
+      <h3>תרחיש א׳ — מלחמה קצרה, האיום נתפס כמוסר</h3>
+      <p>הפיננסים עולים, הביטחוניות מזנקות ואז דועכות, פחות מרווח לעלייה נוספת.</p>
+      <p><strong>דעה וספקולציה, לא עובדה ולא המלצה.</strong></p>
+    </div>
+    <div class="scenario">
+      <h3>תרחיש ב׳ — מלחמה ממושכת / מצר הורמוז סגור</h3>
+      <p>הנפט עולה, השקל נחלש, הביטחוניות מחזיקות.</p>
+      <p><strong>דעה וספקולציה, לא עובדה ולא המלצה.</strong></p>
+    </div>
+    <p class="disclaimer">התרחישים הם דעה וספקולציה, לא עובדה ולא המלצה להשקעה.</p>
+  </section>
+</main>
+<script>
+"use strict";
+var US_TICKERS = ["GOOGL","AMZN","SNDK","NVDA","AVGO","CRWV","MU","ANET"];
+var US_NAMES = {GOOGL:"גוגל",AMZN:"אמזון",SNDK:"סאנדיסק",NVDA:"נבידיה",AVGO:"ברודקום",CRWV:"קורוויב",MU:"מייקרון",ANET:"אריסטה"};
+var IL_TICKERS = ["ESLT","^TA125.TA","NXSN.TA"];
+var IL_NAMES = {ESLT:"אלביט מערכות","^TA125.TA":"מדד ת״א 125","NXSN.TA":"נקסט ויז׳ן"};
+
+function fmtPrice(v, sym) {
+  if (v === null || v === undefined) return "—";
+  // ESLT trades on NASDAQ in USD; NXSN.TA trades on TASE in NIS.
+  var suffix = (sym === "NXSN.TA") ? " ₪" : "$";
+  if (sym === "^TA125.TA") suffix = "";
+  return Number(v).toLocaleString("en-US", {maximumFractionDigits: 2}) + suffix;
+}
+function fmtPct(v) {
+  if (v === null || v === undefined) return "—";
+  var sign = v > 0 ? "+" : "";
+  return sign + Number(v).toFixed(2) + "%";
+}
+function drawSpark(canvas, history) {
+  if (!history || history.length < 2) return;
+  var dpr = window.devicePixelRatio || 1;
+  var w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  var ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  var vals = history.map(function (p) { return p[1]; });
+  var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  var span = (max - min) || 1;
+  var up = vals[vals.length - 1] >= vals[0];
+  ctx.strokeStyle = up ? "#15803d" : "#b91c1c";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  vals.forEach(function (v, i) {
+    var x = i / (vals.length - 1) * w;
+    var y = h - 2 - ((v - min) / span) * (h - 4);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+function cardHTML(sym, name, t) {
+  var pctCls = (t.day_pct === null || t.day_pct === undefined) ? "flat" : (t.day_pct > 0 ? "up" : (t.day_pct < 0 ? "down" : "flat"));
+  var arrow = (t.day_pct > 0) ? "▲ " : (t.day_pct < 0 ? "▼ " : "");
+  var badges = (t.signals || []).map(function (s) {
+    return '<span class="badge">' + s.replace(/</g, "&lt;") + "</span>";
+  }).join("");
+  if (t.error) badges += '<span class="badge warn">שגיאת משיכה</span>';
+  var el = document.createElement("article");
+  el.className = "card";
+  el.innerHTML =
+    '<h3>' + name + '</h3><div class="sym">' + sym + "</div>" +
+    '<div class="price">' + fmtPrice(t.price, sym) + "</div>" +
+    '<div class="chg ' + pctCls + '">' + arrow + fmtPct(t.day_pct) + " היום</div>" +
+    '<canvas class="spark"></canvas>' +
+    '<div class="badges">' + (badges || '<span class="empty">אין איתותים חדשים</span>') + "</div>";
+  var canvas = el.querySelector("canvas");
+  requestAnimationFrame(function () { drawSpark(canvas, t.history); });
+  return el;
+}
+function renderFromData(data) {
+  var tickers = data.tickers || {};
+  var usGrid = document.getElementById("us-grid");
+  var ilGrid = document.getElementById("il-grid");
+  usGrid.innerHTML = ""; ilGrid.innerHTML = "";
+  var usMissing = [];
+  US_TICKERS.forEach(function (sym) {
+    var t = tickers[sym];
+    if (!t) { usMissing.push(sym); return; }
+    usGrid.appendChild(cardHTML(sym, t.hebrew_name || US_NAMES[sym], t));
+  });
+  IL_TICKERS.forEach(function (sym) {
+    var t = tickers[sym];
+    if (!t) return;
+    ilGrid.appendChild(cardHTML(sym, t.hebrew_name || IL_NAMES[sym], t));
+  });
+  var gen = document.getElementById("generated");
+  if (data.generated_at) {
+    gen.textContent = "עודכן: " + new Date(data.generated_at).toLocaleString("he-IL", {timeZone: "Asia/Jerusalem"});
+  }
+  var usStatus = document.getElementById("us-status");
+  if (usMissing.length) {
+    usStatus.innerHTML = '<p class="note">חסרים בקובץ הנתונים: ' + usMissing.join(", ") + "</p>";
+  }
+}
+async function fetchYahooLive(sym) {
+  var url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(sym) + "?interval=1d&range=4mo";
+  var resp = await fetch(url);
+  var data = await resp.json();
+  var result = data.chart.result[0];
+  var stamps = result.timestamp;
+  var closes = result.indicators.adjclose[0].adjclose;
+  var rows = [];
+  stamps.forEach(function (ts, i) {
+    if (closes[i] === null || closes[i] === undefined) return;
+    rows.push([new Date(ts * 1000).toISOString().slice(0, 10), closes[i]]);
+  });
+  if (sym === "NXSN.TA" && rows.length && rows[rows.length - 1][1] > 1000) {
+    rows = rows.map(function (r) { return [r[0], r[1] / 100]; });
+  }
+  var last = rows[rows.length - 1][1];
+  var prev = rows[rows.length - 2][1];
+  return {
+    hebrew_name: US_NAMES[sym] || sym,
+    price: Math.round(last * 100) / 100,
+    day_pct: Math.round((last - prev) / prev * 100 * 100) / 100,
+    history: rows.slice(-30),
+    signals: [],
+    news: []
+  };
+}
+async function load() {
+  try {
+    var resp = await fetch("./data.json");
+    if (!resp.ok) throw new Error("no data.json");
+    var data = await resp.json();
+    renderFromData(data);
+    return;
+  } catch (e) { /* fall through to live fetch */ }
+  try {
+    var tickers = {};
+    for (var i = 0; i < US_TICKERS.length; i++) {
+      try { tickers[US_TICKERS[i]] = await fetchYahooLive(US_TICKERS[i]); }
+      catch (err) { /* per-ticker failure: skip */ }
+    }
+    if (Object.keys(tickers).length === 0) throw new Error("all live fetches failed");
+    document.getElementById("generated").textContent = "נתונים חיים מ־Yahoo (ללא קובץ data.json)";
+    renderFromData({tickers: tickers, generated_at: null});
+  } catch (e2) {
+    document.getElementById("generated").textContent = "";
+    document.getElementById("us-status").innerHTML =
+      '<div class="error">אין קובץ נתונים — הרץ python3 fetch_snapshot.py</div>';
+  }
+}
+document.getElementById("tab-us").addEventListener("click", function () {
+  document.getElementById("panel-us").classList.remove("hidden");
+  document.getElementById("panel-il").classList.add("hidden");
+  document.getElementById("tab-us").classList.add("active");
+  document.getElementById("tab-il").classList.remove("active");
+});
+document.getElementById("tab-il").addEventListener("click", function () {
+  document.getElementById("panel-il").classList.remove("hidden");
+  document.getElementById("panel-us").classList.add("hidden");
+  document.getElementById("tab-il").classList.add("active");
+  document.getElementById("tab-us").classList.remove("active");
+});
+load();
+</script>
+</body>
+</html>
