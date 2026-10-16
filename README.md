@@ -1,10 +1,10 @@
 # מעקב מניות · stocks
 
 בנייה עצמאית (standalone) של מעקב המניות של אור: כרטיסי מניות + בודק התראות לווטסאפ.
-מחליף את ה־artifact המאוחסן (`space`) בקוד פתוח בגיט, כך שניתן לעדכן ולפרוס אותו ב־GitHub Pages.
+מחליף את ה־artifact המאוחסן (`space`) בקוד פתוח בגיט, פרוס ב־Vercel.
 
 Standalone rebuild of Or's stock tracker: stock cards + a WhatsApp alert checker.
-Replaces the hosted artifact (`space`) with code in git, deployable via GitHub Pages.
+Replaces the hosted artifact (`space`) with code in git, deployed on Vercel.
 
 ## מה יש כאן
 
@@ -33,7 +33,7 @@ python3 check_trends.py
 
 מקומית: פותחים את `index.html` בדפדפן (הדף ינסה לקרוא את `data.json` שלידו; בלי שרת מקומי ייתכן שהדפדפן יחסום את הקריאה — במקרה כזה מריצים `python3 -m http.server` בתיקייה).
 
-GitHub Pages: ‏Settings → Pages → ‏Build and deployment → ‏Deploy from a branch → ‏Branch: `main`, ‏Folder: `/ (root)`. הדף יעלה ב־`https://itzikban.github.io/stocks/`.
+Vercel: פרויקט `stocks` (לא מחובר לגיט — דיפלוי ישיר של קבצים, לא אוטומטי על push; חיבור הגיט נכשל ב־403 על ה־scope של Vercel). הדף החי: `https://stocks-ecru-pi.vercel.app/` (הכינוי `stocks-itzik1.vercel.app` מוגן ב־SSO ודורש התחברות).
 
 ## תהליך עדכון כל 6 שעות
 
