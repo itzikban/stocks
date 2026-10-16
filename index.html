@@ -77,7 +77,16 @@
   .feat-stats { display:flex; gap:28px; margin:12px 0 4px; }
   .feat-stats .lbl { color:var(--muted); font-size:13px; }
   .feat-stats .val { font-weight:800; font-size:16px; direction:ltr; text-align:right; }
-  canvas.feat-chart { width:100%; height:200px; display:block; margin-top:8px; }
+  .chart-wrap { position:relative; direction:ltr; }
+  .chart-wrap > div { overflow:visible !important; }
+  .feat-chart { width:100%; height:290px; margin-top:8px; margin-bottom:6px; touch-action:pan-y; }
+  .spark-chart { width:100%; height:90px; margin-top:8px; touch-action:pan-y; }
+  .chart-tip { position:absolute; z-index:5; pointer-events:none; display:none; background:#1f1f1f; border:1px solid #3a3a3a; border-radius:8px; padding:6px 10px; font-size:12px; color:var(--ink); white-space:nowrap; direction:ltr; box-shadow:0 2px 8px rgba(0,0,0,.5); }
+  .chart-tip .tp { font-size:15px; font-weight:800; }
+  .chart-tip .ma { color:var(--amber2); }
+  .chart-legend { display:flex; gap:16px; justify-content:center; color:var(--muted); font-size:12px; margin-top:6px; }
+  .chart-legend i { display:inline-block; width:18px; height:0; border-top:2px solid var(--up); vertical-align:middle; margin-inline-end:5px; }
+  .chart-legend i.d { border-top:2px dashed var(--amber2); }
   .feat-badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
   .badge { background:#262626; color:#e5e5e5; border:1px solid #3a3a3a; border-radius:999px; padding:3px 10px; font-size:12px; }
   .badge.warn { background:#3a2a00; color:#fbbf24; border-color:#5a4300; }
@@ -184,6 +193,7 @@
     <p class="disclaimer">התרחישים הם דעה וספקולציה, לא עובדה ולא המלצה להשקעה.</p>
   </section>
 </main>
+<script src="./vendor/lightweight-charts.standalone.production.js"></script>
 <script>
 "use strict";
 var US_TICKERS = ["GOOGL","AMZN","SNDK","NVDA","AVGO","CRWV","MU","ANET"];
@@ -290,64 +300,77 @@ function renderAlerts(tickers) {
     list.appendChild(row);
   });
 }
-function drawSpark(canvas, history) {
-  if (!history || history.length < 2) return;
-  var dpr = window.devicePixelRatio || 1;
-  var w = canvas.clientWidth, h = canvas.clientHeight;
-  if (!w || !h) return;
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  var ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
-  var vals = history.map(function (p) { return p[1]; });
-  var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
-  var span = (max - min) || 1;
-  var up = vals[vals.length - 1] >= vals[0];
-  ctx.strokeStyle = up ? "#22c55e" : "#ef4444";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  vals.forEach(function (v, i) {
-    var x = i / (vals.length - 1) * w;
-    var y = h - 2 - ((v - min) / span) * (h - 4);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
+var liveCharts = [];
+var featChart = null;
+function disposeCharts() {
+  liveCharts.forEach(function (c) { try { c.remove(); } catch (e) {} });
+  liveCharts = []; featChart = null;
 }
-function drawFeaturedChart(canvas, history) {
-  if (!history || history.length < 2) return;
-  var dpr = window.devicePixelRatio || 1;
-  var w = canvas.clientWidth, h = canvas.clientHeight;
-  if (!w || !h) return;
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  var ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
+/* Interactive chart (TradingView lightweight-charts): crosshair + tooltip + optional MA20.
+   Rebuilt from data.json on every render, so it always follows the data. */
+function makeChart(host, history, opts) {
+  if (!history || history.length < 2 || !window.LightweightCharts) return;
+  var LC = window.LightweightCharts;
+  var full = !!opts.full;
+  var wrap = host;
+  var tip = document.createElement("div");
+  tip.className = "chart-tip";
+  wrap.appendChild(tip);
   var vals = history.map(function (p) { return p[1]; });
-  var ma = ma20Series(history);
-  var all = vals.concat(ma);
-  var min = Math.min.apply(null, all), max = Math.max.apply(null, all);
-  var span = (max - min) || 1;
-  var y = function (v) { return h - 14 - ((v - min) / span) * (h - 28); };
-  var x = function (i) { return 8 + (i / (vals.length - 1)) * (w - 52); };
-  ctx.font = "11px system-ui, sans-serif";
-  ctx.fillStyle = "#a3a3a3";
-  ctx.textAlign = "right";
-  [[max, 12], [(max + min) / 2, (h / 2) + 4], [min, h - 4]].forEach(function (pair) {
-    ctx.fillText("$" + fmtNum(pair[0], 0), w - 4, pair[1]);
-  });
-  // Dashed MA20 line
-  ctx.strokeStyle = "#f59e0b";
-  ctx.lineWidth = 1;
-  ctx.setLineDash([5, 5]);
-  ctx.beginPath();
-  ma.forEach(function (v, i) { if (i === 0) ctx.moveTo(x(i), y(v)); else ctx.lineTo(x(i), y(v)); });
-  ctx.stroke();
-  ctx.setLineDash([]);
-  // Price line
   var up = vals[vals.length - 1] >= vals[0];
-  ctx.strokeStyle = up ? "#22c55e" : "#ef4444";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  vals.forEach(function (v, i) { if (i === 0) ctx.moveTo(x(i), y(v)); else ctx.lineTo(x(i), y(v)); });
-  ctx.stroke();
+  var color = up ? "#22c55e" : "#ef4444";
+  var chart = LC.createChart(wrap, {
+    width: wrap.clientWidth, height: wrap.clientHeight,
+    layout: {background: {type: "solid", color: "transparent"}, textColor: "#a3a3a3", fontSize: 10, fontFamily: "Arial, Helvetica, sans-serif"},
+    grid: {vertLines: {visible: false}, horzLines: {color: full ? "#262626" : "transparent"}},
+    rightPriceScale: {visible: full, borderVisible: false, scaleMargins: {top: 0.1, bottom: 0.12}},
+    leftPriceScale: {visible: false},
+    timeScale: {visible: full, borderVisible: false, ticksVisible: false, fixLeftEdge: true, fixRightEdge: true, tickMarkFormatter: function (t) {
+      var pr = (typeof t === "string") ? t.split("-").map(Number) : [t.year, t.month, t.day];
+      return pr[2] + "." + pr[1];
+    }},
+    handleScroll: false, handleScale: false,
+    crosshair: {mode: 0,
+      vertLine: {color: "#d4d4d4", width: 1, style: 0, labelVisible: false},
+      horzLine: {visible: false, labelVisible: false}},
+    localization: {priceFormatter: function (v) { return "$" + v.toFixed(2); }}
+  });
+  var ma = null;
+  if (opts.ma) {
+    ma = chart.addLineSeries({color: "#f59e0b", lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+    var m = ma20Series(history);
+    ma.setData(history.map(function (p, i) { return {time: p[0], value: m[i]}; }));
+  }
+  var line = chart.addLineSeries({color: color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+    crosshairMarkerVisible: true, crosshairMarkerRadius: 4, crosshairMarkerBorderColor: "#fff", crosshairMarkerBackgroundColor: color});
+  line.setData(history.map(function (p) { return {time: p[0], value: p[1]}; }));
+  chart.timeScale().fitContent();
+  var maVals = ma20Series(history);
+  var idxByDate = {};
+  history.forEach(function (p, i) { idxByDate[p[0]] = i; });
+  chart.subscribeCrosshairMove(function (param) {
+    if (!param.point || !param.time || param.point.x < 0 || param.point.y < 0) { tip.style.display = "none"; return; }
+    var pt = param.seriesData.get(line);
+    if (!pt) { tip.style.display = "none"; return; }
+    var key = (typeof param.time === "string") ? param.time : (param.time.year + "-" + String(param.time.month).padStart(2, "0") + "-" + String(param.time.day).padStart(2, "0"));
+    var parts = key.split("-");
+    var html = '<div>' + parts[2] + "." + parts[1] + "." + parts[0] + '</div><div class="tp">' + fmtPrice(pt.value, opts.sym) + "</div>";
+    if (opts.ma && idxByDate[key] !== undefined) html += '<div class="ma">MA20 ' + fmtPrice(maVals[idxByDate[key]], opts.sym) + "</div>";
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    var tw = tip.offsetWidth, W = wrap.clientWidth;
+    var x = param.point.x + 14;
+    if (x + tw > W) x = param.point.x - tw - 14;
+    if (x < 0) x = 0;
+    tip.style.left = x + "px";
+    tip.style.top = Math.max(0, Math.min(param.point.y - 40, wrap.clientHeight - tip.offsetHeight)) + "px";
+  });
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { if (wrap.clientWidth) chart.applyOptions({width: wrap.clientWidth}); chart.timeScale().fitContent(); }).observe(wrap);
+  }
+  chart._host = wrap;
+  liveCharts.push(chart);
+  return chart;
 }
 function renderWatchlist(tickers) {
   var rows = document.getElementById("wl-rows");
@@ -378,6 +401,7 @@ function renderWatchlist(tickers) {
   });
 }
 function renderFeatured(tickers) {
+  if (featChart) { try { featChart.remove(); } catch (e) {} liveCharts = liveCharts.filter(function (c) { return c !== featChart; }); featChart = null; }
   var el = document.getElementById("featured");
   var t = tickers[featuredSym];
   if (!t) { el.innerHTML = '<p class="empty">אין נתונים למניה זו.</p>'; return; }
@@ -399,10 +423,10 @@ function renderFeatured(tickers) {
     '<div class="feat-stats"><div><div class="lbl">חודש</div><div class="val ' +
     ((mc === null) ? "flat" : (mc > 0 ? "up" : (mc < 0 ? "down" : "flat"))) + '">' + fmtPct(mc) + "</div></div>" +
     '<div><div class="lbl">ממוצע 20</div><div class="val">' + fmtPriceUSD(ma) + "</div></div></div>" +
-    '<canvas class="feat-chart"></canvas>' +
+    '<div class="chart-wrap feat-chart" id="feat-chart"></div>' +
+    '<div class="chart-legend"><span><i></i>מחיר סגירה</span><span><i class="d"></i>ממוצע 20 יום</span></div>' +
     '<div class="feat-badges">' + (badges || '<span class="empty">אין איתותים חדשים</span>') + "</div>";
-  var canvas = el.querySelector("canvas");
-  requestAnimationFrame(function () { drawFeaturedChart(canvas, t.history); });
+  featChart = makeChart(document.getElementById("feat-chart"), t.history, {full: true, ma: true, sym: featuredSym});
 }
 function cardHTML(sym, name, t) {
   var pctCls = (t.day_pct === null || t.day_pct === undefined) ? "flat" : (t.day_pct > 0 ? "up" : (t.day_pct < 0 ? "down" : "flat"));
@@ -417,15 +441,15 @@ function cardHTML(sym, name, t) {
     '<h3>' + esc(name) + '</h3><div class="sym">' + esc(sym) + "</div>" +
     '<div class="price">' + fmtPrice(t.price, sym) + "</div>" +
     '<div class="chg ' + pctCls + '">' + arrow + fmtPct(t.day_pct) + " היום</div>" +
-    '<canvas class="spark"></canvas>' +
+    '<div class="chart-wrap spark-chart"></div>' +
     '<div class="badges">' + (badges || '<span class="empty">אין איתותים חדשים</span>') + "</div>";
-  var canvas = el.querySelector("canvas");
-  requestAnimationFrame(function () { drawSpark(canvas, t.history); });
+  el._hist = t.history; el._sym = sym;
   return el;
 }
 function renderFromData(data) {
   var tickers = data.tickers || {};
   currentTickers = tickers;
+  disposeCharts();
   renderAlerts(tickers);
   renderWatchlist(tickers);
   renderFeatured(tickers);
@@ -434,7 +458,9 @@ function renderFromData(data) {
   IL_TICKERS.forEach(function (sym) {
     var t = tickers[sym];
     if (!t) return;
-    ilGrid.appendChild(cardHTML(sym, t.hebrew_name || IL_NAMES[sym], t));
+    var card = cardHTML(sym, t.hebrew_name || IL_NAMES[sym], t);
+    ilGrid.appendChild(card);
+    makeChart(card.querySelector(".spark-chart"), card._hist, {full: false, ma: false, sym: sym});
   });
   var ilEvents = collectEvents(tickers, IL_TICKERS);
   document.getElementById("il-badge").textContent = ilEvents.length + " אותות";
@@ -509,6 +535,7 @@ document.getElementById("tab-il").addEventListener("click", function () {
   document.getElementById("panel-il").classList.remove("hidden");
   document.getElementById("panel-us").classList.add("hidden");
   document.getElementById("tab-il").classList.add("active");
+  liveCharts.forEach(function (c) { c.resize(c._host.clientWidth, c._host.clientHeight); c.timeScale().fitContent(); });
   document.getElementById("tab-us").classList.remove("active");
 });
 load();
