@@ -65,8 +65,16 @@ def ticker_entry(symbol, name, rows, volumes):
     }
 
 
-def item(title, url, source, vendor, dt):
-    return {"date": dt.astimezone(NY).date().isoformat(), "title": title.strip(), "url": url,
+IL_TZ = ZoneInfo("Asia/Jerusalem")
+# Hebrew search terms for Israeli-market news (Google News he/IL: Globes, Calcalist, TheMarker, Bizportal, ...).
+QUERY_HE = {"ESLT": "אלביט מערכות", "^TA125.TA": "מדד ת\"א 125", "NXSN.TA": "נקסט ויז'ן"}
+
+
+Q = r"[\"״']"
+
+
+def item(title, url, source, vendor, dt, tz=NY):
+    return {"date": dt.astimezone(tz).date().isoformat(), "title": title.strip(), "url": url,
             "source": source, "vendor": vendor, "published_at": dt.astimezone(timezone.utc).isoformat()}
 
 
@@ -86,6 +94,29 @@ def google_news(symbol, start, end):
         if source and title.endswith(" - " + source):
             title = title[: -len(source) - 3]
         out.append(item(title, link, source, "Google News", parsedate_to_datetime(pub)))
+    return out
+
+
+# An Israeli headline must mention the company/index to be kept (the search is fuzzy).
+REQUIRE_HE = {"ESLT": r"אלביט|elbit", "^TA125.TA": r"ת%sא|תל.אביב|בורסה|מדד|וול סטריט|מניות" % Q, "NXSN.TA": r"נקסט|nextvision"}
+
+
+def google_news_he(symbol, name, start, end):
+    q = "%s after:%s before:%s" % (QUERY_HE.get(symbol, name), start, end)
+    url = "https://news.google.com/rss/search?q=%s&hl=he&gl=IL&ceid=IL:he" % urllib.parse.quote(q)
+    root = ET.fromstring(get(url))
+    out = []
+    for it in root.iter("item"):
+        src = it.find("source")
+        title = it.findtext("title") or ""
+        pub = it.findtext("pubDate")
+        link = it.findtext("link")
+        if not (title and pub and link):
+            continue
+        source = src.text if src is not None else None
+        if source and title.endswith(" - " + source):
+            title = title[: -len(source) - 3]
+        out.append(item(title, link, source, "Google News", parsedate_to_datetime(pub), IL_TZ))
     return out
 
 
@@ -116,13 +147,30 @@ CAT_RE = [(k, he, re.compile(rx, re.I)) for k, he, rx in CATEGORIES]
 NOISE = re.compile(r"(shares|stock|position|stake)\b.{0,40}\b(acquired|bought|purchased|sold|trimmed|boosted|lifted|cut|raised|lowered|reduced|increased|decreased)\b.{0,15}\bby\b|\b(acquires?|buys|sells|boosts|lifts|trims|cuts|raises|lowers|reduces) (a )?(new )?(position|stake|shares)|holdings (in|of)|\b13f\b|institutional (investor|ownership)", re.I)
 
 
+# Hebrew headlines (Israeli market). Same idea: topic label only, not a price-impact view.
+CATEGORIES_HE = [
+    ("earnings", "דוחות", r"דוחות?|דו%s?ח|רווח נקי|הפסד נקי|תוצאות (הרבעון|רבעוניות)|הכנסות" % Q),
+    ("analyst", "אנליסטים", r"מחיר יעד|אנליסט|המלצת? (קנייה|מכירה|החזקה)|מורידה? (את )?(הדירוג|המלצה)|מעלה? (את )?(הדירוג|המלצה)|דירוג"),
+    ("guidance", "תחזית", r"תחזית|תחזיות|יעדי (הכנסות|צמיחה)"),
+    ("legal", "רגולציה/משפט", r"תביעה|חקירה|רשות ניירות ערך|קנס|הגבלים עסקיים|רגולטור|פשרה|בית משפט"),
+    ("deal", "מיזוג/עסקה", r"עסקה|רוכשת|רכישת|מיזוג|הסכם|חוזה|הזמנה|מכרז|זוכה ב|מגייסת"),
+    ("offering", "הנפקה/מימון", r"הנפקה|דיבידנד|רכישה עצמית|גיוס (הון|חוב)|אג%sח" % Q),
+    ("security", "ביטחוני", r"מלחמה|איראן|חיזבאללה|חמאס|הסלמה|הפסקת אש|תקיפה|טילים|צה%sל" % Q),
+]
+CAT_RE_HE = [(k, he, re.compile(rx)) for k, he, rx in CATEGORIES_HE]
+
+
+def classify_he(title):
+    return [{"key": k, "label": he} for k, he, rx in CAT_RE_HE if rx.search(title)]
+
+
 def classify(title):
     if NOISE.search(title):
         return []
     return [{"key": k, "label": he} for k, he, rx in CAT_RE if rx.search(title)]
 
 
-def news_for(symbol, backfill_days, moves=None):
+def news_for(symbol, backfill_days, moves=None, market="US", name=""):
     """Returns (items, failures). Failures are fetch errors (logged and counted, never swallowed)."""
     failures = []
     today = datetime.now(NY).date()
@@ -134,21 +182,27 @@ def news_for(symbol, backfill_days, moves=None):
     while end > start_limit:
         start = max(start_limit, end - timedelta(days=span))
         try:
-            items += google_news(symbol, start.isoformat(), end.isoformat())
+            if market == "IL":
+                items += google_news_he(symbol, name, start.isoformat(), end.isoformat())
+            else:
+                items += google_news(symbol, start.isoformat(), end.isoformat())
         except Exception as e:  # noqa: BLE001
             failures.append("google %s" % start)
             print("ERROR google news %s %s: %s" % (symbol, start, e), file=sys.stderr, flush=True)
         time.sleep(1)
         end = start
     try:
-        items += yahoo_news(symbol)
+        if market != "IL":
+            items += yahoo_news(symbol)
     except Exception as e:  # noqa: BLE001
         failures.append("yahoo")
         print("ERROR yahoo news %s: %s" % (symbol, e), file=sys.stderr, flush=True)
     seen, out = set(), []
     moves = moves or {}
     for it in items:
-        cats = classify(it["title"])
+        if market == "IL" and not re.search(REQUIRE_HE.get(symbol) or re.escape(name.split()[0] if name else symbol), it["title"], re.I):
+            continue
+        cats = classify_he(it["title"]) if market == "IL" else classify(it["title"])
         if cats and abs(moves.get(it["date"], 0) or 0) >= fs.SHARP_PCT:
             cats.append({"key": "move", "label": "יום עם תזוזה חדה"})
         if not cats:
@@ -275,7 +329,7 @@ def main():
         time.sleep(1)
         h = tickers[sym]["history"]
         moves = {h[i][0]: (h[i][1] - h[i - 1][1]) / h[i - 1][1] * 100 for i in range(1, len(h))}
-        news[sym], nf = news_for(sym, a.backfill_days, moves)
+        news[sym], nf = news_for(sym, a.backfill_days, moves, w.get("market", "US"), w["name"])
         if nf:
             news_fail.append("%s(%s)" % (sym, ",".join(nf)))
         print("%s: price %.2f, %d important news" % (sym, tickers[sym]["price"], len(news[sym])), flush=True)
@@ -288,7 +342,8 @@ def main():
     if a.stage:
         have = existing_translated(site, list(news))
         todo = [{"id": item_id(sym, it["url"]), "symbol": sym, "title": it["title"]}
-                for sym, items in news.items() for it in items if item_id(sym, it["url"]) not in have]
+                for sym, items in news.items() for it in items
+                if item_id(sym, it["url"]) not in have and not re.search("[\u0590-\u05ff]", it["title"])]
         os.makedirs(a.stage, exist_ok=True)
         payload["_exit"] = status
         json.dump(payload, open(os.path.join(a.stage, "payload.json"), "w", encoding="utf8"), ensure_ascii=False)

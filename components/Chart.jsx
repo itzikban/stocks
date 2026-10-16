@@ -28,7 +28,7 @@ export default function Chart({ history, sym, full = false, ma = false, classNam
         tickMarkFormatter: (t) => { const p = typeof t === "string" ? t.split("-").map(Number) : [t.year, t.month, t.day]; return p[2] + "." + p[1]; } },
       handleScroll: false, handleScale: false,
       crosshair: { mode: 0, vertLine: { color: "#d4d4d4", width: 1, style: 0, labelVisible: false }, horzLine: { visible: false, labelVisible: false } },
-      localization: { priceFormatter: (v) => "$" + v.toFixed(2) },
+      localization: { priceFormatter: (v) => (sym === "^TA125.TA" ? v.toFixed(0) : sym === "NXSN.TA" ? v.toFixed(2) + " ₪" : "$" + v.toFixed(2)) },
     });
     const maVals = ma20Series(history);
     if (ma) {
