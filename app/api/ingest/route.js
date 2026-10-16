@@ -39,6 +39,7 @@ export async function POST(request) {
           date: it.date, url: it.url.slice(0, 2000), title: it.title.slice(0, 400),
           source: typeof it.source === "string" ? it.source.slice(0, 120) : null,
           vendor: it.vendor.slice(0, 60),
+          title_he: typeof it.title_he === "string" && it.title_he.trim() ? it.title_he.trim().slice(0, 400) : null,
           categories: Array.isArray(it.categories) ? it.categories.slice(0, 4).filter((c) => c && typeof c.label === "string").map((c) => ({ key: String(c.key || "").slice(0, 20), label: c.label.slice(0, 30) })) : [],
           published_at: it.published_at && !Number.isNaN(Date.parse(it.published_at)) ? it.published_at : null,
         });

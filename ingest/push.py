@@ -10,7 +10,7 @@ News sources (no API key):
   - Yahoo Finance search news (latest items only), vendor "Yahoo Finance"
 Each item keeps the original publisher in `source` and the article link in `url`.
 """
-import argparse, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, hashlib, json, os, re, sys, time, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -123,6 +123,8 @@ def classify(title):
 
 
 def news_for(symbol, backfill_days, moves=None):
+    """Returns (items, failures). Failures are fetch errors (logged and counted, never swallowed)."""
+    failures = []
     today = datetime.now(NY).date()
     items = []
     span = 5 if backfill_days > 5 else 3
@@ -134,13 +136,15 @@ def news_for(symbol, backfill_days, moves=None):
         try:
             items += google_news(symbol, start.isoformat(), end.isoformat())
         except Exception as e:  # noqa: BLE001
-            print("WARN google news %s %s: %s" % (symbol, start, e), file=sys.stderr)
+            failures.append("google %s" % start)
+            print("ERROR google news %s %s: %s" % (symbol, start, e), file=sys.stderr, flush=True)
         time.sleep(1)
         end = start
     try:
         items += yahoo_news(symbol)
     except Exception as e:  # noqa: BLE001
-        print("WARN yahoo news %s: %s" % (symbol, e), file=sys.stderr)
+        failures.append("yahoo")
+        print("ERROR yahoo news %s: %s" % (symbol, e), file=sys.stderr, flush=True)
     seen, out = set(), []
     moves = moves or {}
     for it in items:
@@ -155,46 +159,154 @@ def news_for(symbol, backfill_days, moves=None):
             continue
         seen.add(key)
         out.append(it)
-    return out
+    return out, failures
+
+
+def with_retry(fn, what, tries=4):
+    """Retry with backoff (longer on HTTP 429). Raises the last error."""
+    delay = 2
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            code = getattr(e, "code", None)
+            if i == tries - 1:
+                raise
+            wait = delay * (4 if code == 429 else 1)
+            print("retry %s in %ds (%s)" % (what, wait, e), file=sys.stderr, flush=True)
+            time.sleep(wait)
+            delay *= 2
+
+
+def item_id(sym, url):
+    return hashlib.sha1((sym + "|" + url).encode()).hexdigest()[:12]
+
+
+def existing_translated(site, symbols):
+    """ids of items already stored with a Hebrew title (so they are never re-translated)."""
+    have = {}
+    for sym in symbols:
+        try:
+            for n in json.loads(get(site + "/api/news?symbol=" + urllib.parse.quote(sym))).get("news", []):
+                if n.get("title_he"):
+                    have[item_id(sym, n["url"])] = n["title_he"]
+        except Exception as e:  # noqa: BLE001
+            print("WARN could not read stored news for %s: %s" % (sym, e), file=sys.stderr)
+    return have
+
+
+def apply_translations(payload, translations, have):
+    missing = 0
+    for sym, items in payload["news"].items():
+        for it in items:
+            iid = item_id(sym, it["url"])
+            he = translations.get(iid) or have.get(iid)
+            if he and isinstance(he, str) and he.strip():
+                it["title_he"] = he.strip()[:400]
+            else:
+                missing += 1
+    return missing
+
+
+def post(site, auth, payload):
+    body = json.dumps(payload, ensure_ascii=False).encode()
+    resp = get(site + "/api/ingest", data=body, headers={**auth, "Content-Type": "application/json"}, timeout=120)
+    print("ingest:", resp.decode()[:200])
 
 
 def main():
+    """Exit codes: 0 ok; 1 nothing fetched (nothing posted); 2 watchlist unavailable (nothing posted);
+    3 some prices failed (posted, failed tickers carried over from the last snapshot and marked stale,
+    or omitted if the site never had them); 4 only news fetching had failures (prices posted)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--backfill-days", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--stage", metavar="DIR", help="fetch everything, write DIR/payload.json and DIR/untranslated.json, do not post")
+    ap.add_argument("--post", metavar="DIR", help="post DIR/payload.json after applying DIR/translations.json (id -> Hebrew title)")
+    ap.add_argument("--translations", metavar="FILE", help="translations file for --post (default DIR/translations.json)")
     a = ap.parse_args()
     site = os.environ.get("SITE_URL", "https://stocks-ecru-pi.vercel.app").rstrip("/")
     secret = os.environ.get("INGEST_SECRET", "").strip()
     if not secret and not a.dry_run:
-        sys.exit("INGEST_SECRET missing")
+        print("ERROR: INGEST_SECRET missing", file=sys.stderr)
+        return 2
     auth = {"Authorization": "Bearer " + secret}
+    if a.post:
+        payload = json.load(open(os.path.join(a.post, "payload.json"), encoding="utf8"))
+        tpath = a.translations or os.path.join(a.post, "translations.json")
+        tr = json.load(open(tpath, encoding="utf8")) if os.path.exists(tpath) else {}
+        have = existing_translated(site, list(payload["news"]))
+        missing = apply_translations(payload, tr, have)
+        print("translations applied: %d provided, %d items without Hebrew (posted with original title)" % (len(tr), missing))
+        post(site, auth, payload)
+        return payload.get("_exit", 0)
+    # Fail closed: without the real watchlist we must not post (it could drop added tickers).
     try:
-        wl = json.loads(get(site + "/api/watchlist", headers=auth))["watchlist"]
+        wl = with_retry(lambda: json.loads(get(site + "/api/watchlist", headers=auth))["watchlist"], "watchlist")
+        if not wl:
+            raise RuntimeError("empty watchlist")
     except Exception as e:  # noqa: BLE001
-        print("WARN watchlist fetch failed, using defaults: %s" % e, file=sys.stderr)
-        wl = [{"symbol": s, "name": n} for s, n in fs.TICKERS.items()]
-    tickers, news = {}, {}
+        print("ERROR: watchlist unavailable, nothing posted: %s" % e, file=sys.stderr)
+        return 2
+    try:
+        last_good = with_retry(lambda: json.loads(get(site + "/api/data"))["snapshot"].get("tickers", {}), "last snapshot")
+    except Exception as e:  # noqa: BLE001
+        print("WARN: could not read last snapshot, failed tickers will be omitted: %s" % e, file=sys.stderr)
+        last_good = {}
+    tickers, news, price_fail, news_fail = {}, {}, [], []
     for w in wl:
         sym = w["symbol"]
         try:
-            rows, vols = fetch_prices(sym)
+            rows, vols = with_retry(lambda: fetch_prices(sym), "prices " + sym)
+            if len(rows) < 2:
+                raise RuntimeError("empty price history")
             tickers[sym] = ticker_entry(sym, w["name"], rows, vols)
         except Exception as e:  # noqa: BLE001
-            print("WARN prices %s: %s" % (sym, e), file=sys.stderr)
+            price_fail.append(sym)
+            print("ERROR prices %s: %s" % (sym, e), file=sys.stderr, flush=True)
+            old = last_good.get(sym)
+            if old and old.get("price") is not None:
+                old = dict(old)
+                old["stale"] = True
+                old["stale_reason"] = str(e)[:120]
+                old["stale_checked_at"] = datetime.now(ZoneInfo("Asia/Jerusalem")).isoformat()
+                tickers[sym] = old
             continue
         time.sleep(1)
         h = tickers[sym]["history"]
         moves = {h[i][0]: (h[i][1] - h[i - 1][1]) / h[i - 1][1] * 100 for i in range(1, len(h))}
-        news[sym] = news_for(sym, a.backfill_days, moves)
+        news[sym], nf = news_for(sym, a.backfill_days, moves)
+        if nf:
+            news_fail.append("%s(%s)" % (sym, ",".join(nf)))
         print("%s: price %.2f, %d important news" % (sym, tickers[sym]["price"], len(news[sym])), flush=True)
+    fresh = [s for s in tickers if not tickers[s].get("stale")]
+    if not fresh:
+        print("ERROR: no ticker fetched successfully, nothing posted", file=sys.stderr)
+        return 1
     payload = {"generated_at": datetime.now(ZoneInfo("Asia/Jerusalem")).isoformat(), "tickers": tickers, "news": news}
-    if a.dry_run:
-        print("dry run, %d tickers, %d news" % (len(tickers), sum(len(v) for v in news.values())))
-        return 0
-    body = json.dumps(payload, ensure_ascii=False).encode()
-    resp = get(site + "/api/ingest", data=body, headers={**auth, "Content-Type": "application/json"}, timeout=120)
-    print("ingest:", resp.decode()[:200])
-    return 0 if tickers else 1
+    status = 3 if price_fail else (4 if news_fail else 0)
+    if a.stage:
+        have = existing_translated(site, list(news))
+        todo = [{"id": item_id(sym, it["url"]), "symbol": sym, "title": it["title"]}
+                for sym, items in news.items() for it in items if item_id(sym, it["url"]) not in have]
+        os.makedirs(a.stage, exist_ok=True)
+        payload["_exit"] = status
+        json.dump(payload, open(os.path.join(a.stage, "payload.json"), "w", encoding="utf8"), ensure_ascii=False)
+        json.dump(todo, open(os.path.join(a.stage, "untranslated.json"), "w", encoding="utf8"), ensure_ascii=False, indent=1)
+        print("staged: %d tickers, %d news, %d need Hebrew translation -> %s" % (len(tickers), sum(len(v) for v in news.values()), len(todo), a.stage))
+    elif a.dry_run:
+        print("dry run: %d tickers (%d stale), %d news" % (len(tickers), len(tickers) - len(fresh), sum(len(v) for v in news.values())))
+    else:
+        have = existing_translated(site, list(news))
+        apply_translations(payload, {}, have)
+        post(site, auth, payload)
+    if price_fail:
+        print("FAILED prices: %s (stale carried over where available)" % ",".join(price_fail), file=sys.stderr)
+        return 3
+    if news_fail:
+        print("FAILED news only: %s" % ",".join(news_fail), file=sys.stderr)
+        return 4
+    return 0
 
 
 if __name__ == "__main__":

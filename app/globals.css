@@ -123,3 +123,4 @@
 .dp-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
 .dp-tag { background:#3a2a00; color:#fbbf24; border:1px solid #5a4300; border-radius:999px; padding:1px 8px; font-size:11px; }
 .dp-note { color:var(--muted); font-size:11px; margin-top:8px; }
+.dp-orig { color:var(--muted); font-size:12px; margin-top:3px; text-align:right; }

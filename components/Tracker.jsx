@@ -10,6 +10,7 @@ function Badges({ t }) {
     <>
       {sigs.map((s) => <span key={s} className="badge">{s}</span>)}
       {t.error && <span className="badge warn">שגיאת משיכה</span>}
+      {t.stale && <span className="badge warn">נתונים ישנים: המשיכה האחרונה נכשלה</span>}
       {!sigs.length && !t.error && <span className="empty">אין איתותים חדשים</span>}
     </>
   );
@@ -54,7 +55,8 @@ function DayPanel({ t, sym, date, news, newsLoaded, onClose }) {
       <ul className="dp-news">
         {items.map((n) => (
           <li key={n.url}>
-            <a href={n.url} target="_blank" rel="noopener noreferrer" dir="auto">{n.title}</a>
+            <a href={n.url} target="_blank" rel="noopener noreferrer" dir="auto">{n.title_he || n.title}</a>
+            {n.title_he && <div className="dp-orig" dir="ltr">{n.title}</div>}
             <div className="dp-tags">{(n.categories || []).map((c) => <span key={c.key} className="dp-tag">{c.label}</span>)}</div>
             <div className="dp-src">{n.source && n.source !== n.vendor ? n.source + " · " : ""}<span>{n.vendor}</span> · {fmtDay(n.date)}</div>
           </li>
