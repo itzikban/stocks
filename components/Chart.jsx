@@ -4,8 +4,11 @@ import { createChart } from "lightweight-charts";
 import { fmtPrice, ma20Series } from "@/lib/format";
 
 // Interactive line chart: crosshair + dot + tooltip (date, price, MA20). Rebuilt when data changes.
-export default function Chart({ history, sym, full = false, ma = false, className }) {
+export default function Chart({ history, sym, full = false, ma = false, className, onPick, pinned, newsDates }) {
   const host = useRef(null);
+  const lineRef = useRef(null);
+  const pickRef = useRef(onPick);
+  pickRef.current = onPick;
   useEffect(() => {
     const wrap = host.current;
     if (!wrap || !history || history.length < 2) return;
@@ -35,6 +38,7 @@ export default function Chart({ history, sym, full = false, ma = false, classNam
     const line = chart.addLineSeries({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
       crosshairMarkerVisible: true, crosshairMarkerRadius: 4, crosshairMarkerBorderColor: "#fff", crosshairMarkerBackgroundColor: color });
     line.setData(history.map((p) => ({ time: p[0], value: p[1] })));
+    lineRef.current = line;
     chart.timeScale().fitContent();
     const idx = {};
     history.forEach((p, i) => { idx[p[0]] = i; });
@@ -54,11 +58,28 @@ export default function Chart({ history, sym, full = false, ma = false, classNam
       tip.style.left = Math.max(0, x) + "px";
       tip.style.top = Math.max(0, Math.min(param.point.y - 40, wrap.clientHeight - tip.offsetHeight)) + "px";
     });
+    chart.subscribeClick((param) => {
+      if (!pickRef.current || !param.time) return;
+      const key = typeof param.time === "string" ? param.time : `${param.time.year}-${String(param.time.month).padStart(2, "0")}-${String(param.time.day).padStart(2, "0")}`;
+      if (idx[key] !== undefined) pickRef.current(key);
+    });
     const ro = new ResizeObserver(() => {
       if (wrap.clientWidth) { chart.applyOptions({ width: wrap.clientWidth }); chart.timeScale().fitContent(); }
     });
     ro.observe(wrap);
-    return () => { ro.disconnect(); chart.remove(); tip.remove(); };
+    return () => { ro.disconnect(); chart.remove(); tip.remove(); lineRef.current = null; };
   }, [history, sym, full, ma]);
+
+  // Markers: small dots on days that have news, a white arrow on the pinned day.
+  useEffect(() => {
+    const line = lineRef.current;
+    if (!line || !history) return;
+    const days = new Set(history.map((p) => p[0]));
+    const m = [];
+    (newsDates || []).forEach((d) => { if (days.has(d) && d !== pinned) m.push({ time: d, position: "belowBar", color: "#94a3b8", shape: "circle", size: 0.5 }); });
+    if (pinned && days.has(pinned)) m.push({ time: pinned, position: "aboveBar", color: "#ffffff", shape: "arrowDown", size: 1.2 });
+    m.sort((a, b) => (a.time < b.time ? -1 : 1));
+    line.setMarkers(m);
+  }, [history, pinned, newsDates]);
   return <div ref={host} className={"chart-wrap " + className} />;
 }

@@ -1,8 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Chart from "./Chart";
 import { DEFAULT_WATCHLIST } from "@/lib/defaults";
-import { arrowOf, classifySignal, fmtGenerated, fmtPct, fmtPrice, fmtUSD, ma20, monthChange, pctClass } from "@/lib/format";
+import { arrowOf, classifySignal, fmtGenerated, fmtNum, fmtPct, fmtPrice, fmtUSD, ma20, ma20Series, monthChange, pctClass } from "@/lib/format";
 
 function Badges({ t }) {
   const sigs = t.signals || [];
@@ -15,6 +15,56 @@ function Badges({ t }) {
   );
 }
 
+function fmtDay(d) { const [y, m, dd] = d.split("-"); return `${dd}.${m}.${y}`; }
+function fmtVol(v) {
+  if (v === null || v === undefined) return "—";
+  if (v >= 1e9) return fmtNum(v / 1e9, 2) + "B";
+  if (v >= 1e6) return fmtNum(v / 1e6, 2) + "M";
+  if (v >= 1e3) return fmtNum(v / 1e3, 1) + "K";
+  return String(v);
+}
+
+// Detail panel for the pinned day: close, change, volume, MA20 and the news since the previous close.
+function DayPanel({ t, sym, date, news, newsLoaded, onClose }) {
+  const h = t.history || [];
+  const i = h.findIndex((p) => p[0] === date);
+  if (i < 0) return null;
+  const close = h[i][1];
+  const prev = i > 0 ? h[i - 1][1] : null;
+  const pct = prev ? ((close - prev) / prev) * 100 : null;
+  const ma = ma20Series(h)[i];
+  const vol = (t.volumes || []).find((v) => v[0] === date);
+  const prevDate = i > 0 ? h[i - 1][0] : null;
+  const items = news.filter((n) => n.date <= date && (!prevDate || n.date > prevDate));
+  return (
+    <div className="day-panel">
+      <div className="dp-head">
+        <strong>{fmtDay(date)}</strong>
+        <button type="button" className="dp-close" onClick={onClose} aria-label="סגור">✕</button>
+      </div>
+      <div className="dp-stats">
+        <div><div className="lbl">סגירה</div><div className="val">{fmtPrice(close, sym)}</div></div>
+        <div><div className="lbl">שינוי יומי</div><div className={"val " + pctClass(pct)}>{fmtPct(pct === null ? null : Math.round(pct * 100) / 100)}</div></div>
+        <div><div className="lbl">מחזור</div><div className="val">{fmtVol(vol && vol[1])}</div></div>
+        <div><div className="lbl">MA20</div><div className="val">{fmtPrice(ma, sym)}</div></div>
+      </div>
+      <div className="dp-news-title">חדשות חשובות מאז הסגירה הקודמת ({items.length})</div>
+      {!newsLoaded && <div className="empty">טוען חדשות…</div>}
+      {newsLoaded && !items.length && <div className="empty">אין חדשות חשובות שמורות לתאריך הזה.</div>}
+      <ul className="dp-news">
+        {items.map((n) => (
+          <li key={n.url}>
+            <a href={n.url} target="_blank" rel="noopener noreferrer" dir="auto">{n.title}</a>
+            <div className="dp-tags">{(n.categories || []).map((c) => <span key={c.key} className="dp-tag">{c.label}</span>)}</div>
+            <div className="dp-src">{n.source && n.source !== n.vendor ? n.source + " · " : ""}<span>{n.vendor}</span> · {fmtDay(n.date)}</div>
+          </li>
+        ))}
+      </ul>
+      <div className="dp-note">התגיות הן סיווג אוטומטי לפי מילות מפתח בכותרת, לא הערכה של השפעה על המחיר. הכותרות והקישורים מהמקור.</div>
+    </div>
+  );
+}
+
 export default function Tracker({ initial }) {
   const [data, setData] = useState(initial);
   const [tab, setTab] = useState("us");
@@ -24,6 +74,20 @@ export default function Tracker({ initial }) {
   const us = watchlist.filter((w) => w.market !== "IL");
   const il = watchlist.filter((w) => w.market === "IL");
   const [featured, setFeatured] = useState(us[0]?.symbol);
+  const [pinned, setPinned] = useState(null);
+  const [news, setNews] = useState([]);
+  const [newsFor, setNewsFor] = useState(null);
+  useEffect(() => { setPinned(null); }, [featured]);
+  useEffect(() => {
+    if (!featured) return;
+    let live = true;
+    fetch("/api/news?symbol=" + encodeURIComponent(featured))
+      .then((r) => (r.ok ? r.json() : { news: [] }))
+      .then((d) => { if (live) { setNews(d.news || []); setNewsFor(featured); } })
+      .catch(() => { if (live) { setNews([]); setNewsFor(featured); } });
+    return () => { live = false; };
+  }, [featured, data.snapshot.generated_at]);
+  const newsDates = useMemo(() => Array.from(new Set(news.map((n) => n.date))), [news]);
   const meta = (sym) => watchlist.find((w) => w.symbol === sym) || {};
 
   const refresh = useCallback(async () => {
@@ -104,9 +168,11 @@ export default function Tracker({ initial }) {
                     <div><div className="lbl">חודש</div><div className={"val " + pctClass(monthChange(ft.history))}>{fmtPct(monthChange(ft.history))}</div></div>
                     <div><div className="lbl">ממוצע 20</div><div className="val">{fmtUSD(ma20(ft.history))}</div></div>
                   </div>
-                  <Chart className="feat-chart" history={ft.history} sym={featured} full ma />
+                  <Chart className="feat-chart" history={ft.history} sym={featured} full ma onPick={setPinned} pinned={pinned} newsDates={newsDates} />
+                  <div className="chart-hint">לחיצה או נגיעה בגרף מצמידה את פרטי היום וחדשות</div>
                   <div className="chart-legend"><span><i></i>מחיר סגירה</span><span><i className="d"></i>ממוצע 20 יום</span></div>
                   <div className="feat-badges"><Badges t={ft} /></div>
+                  {pinned && <DayPanel t={ft} sym={featured} date={pinned} news={news} newsLoaded={newsFor === featured} onClose={() => setPinned(null)} />}
                 </>
               )}
             </section>
