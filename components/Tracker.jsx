@@ -160,7 +160,7 @@ export default function Tracker({ initial }) {
                     <div>
                       <span className="feat-sym">{featured}</span>
                       <div className="feat-name">{ft.hebrew_name || meta(featured).name || featured}</div>
-                      {meta(featured).company && <div className="feat-company">{meta(featured).company}</div>}
+                      {meta(featured).company && <div className="feat-company" dir="ltr" style={{ textAlign: "right" }}>{meta(featured).company}</div>}
                     </div>
                     <div><div className="feat-price">{fmtUSD(ft.price)}</div><div className={"feat-day " + pctClass(ft.day_pct)}>{arrowOf(ft.day_pct)}{fmtPct(ft.day_pct)} היום</div></div>
                   </div>
