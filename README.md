@@ -57,3 +57,15 @@ Vercel: פרויקט `stocks` (לא מחובר לגיט — דיפלוי ישי�
 
 התרחישים בדף (מלחמה קצרה / מלחמה ממושכת) הם **דעה וספקולציה, לא עובדה ולא המלצה להשקעה**.
 The scenarios on the page (short war / prolonged war) are **opinion and speculation, not fact and not investment advice**.
+
+## Next.js version (React 19)
+
+App Router app. Without env vars it renders from `data.json` (written by the GitHub Action) and the default watchlist, so it works as before.
+
+With `DATABASE_URL` (Neon Postgres) and `INGEST_SECRET` set:
+- `POST /api/ingest` - body same shape as data.json (`{generated_at, tickers}`), header `Authorization: Bearer $INGEST_SECRET`. Stores the latest snapshot.
+- `GET /api/watchlist` (auth) - current watchlist. `POST /api/watchlist` (auth) - `{"action":"add","symbol":"TSLA","name":"טסלה","market":"US"}` or `{"action":"remove","symbol":"TSLA"}`.
+- `GET /api/data` - public, snapshot + watchlist, used by the refresh button (the page also polls every 60s).
+- Tables are created on first use. If the DB is down the page falls back to data.json.
+
+The GitHub Action no longer uses `[skip ci]` so Vercel redeploys when data.json changes (the fallback stays fresh).
