@@ -1,1 +1,59 @@
-# stocks
+# מעקב מניות · stocks
+
+בנייה עצמאית (standalone) של מעקב המניות של אור: כרטיסי מניות + בודק התראות לווטסאפ.
+מחליף את ה־artifact המאוחסן (`space`) בקוד פתוח בגיט, כך שניתן לעדכן ולפרוס אותו ב־GitHub Pages.
+
+Standalone rebuild of Or's stock tracker: stock cards + a WhatsApp alert checker.
+Replaces the hosted artifact (`space`) with code in git, deployable via GitHub Pages.
+
+## מה יש כאן
+
+| קובץ | תיאור |
+|---|---|
+| `index.html` | הדף עצמו — קובץ יחיד, עברית RTL, שתי לשוניות (ארה״ב / ישראל). קורא את `data.json`. |
+| `fetch_snapshot.py` | מושך מחירי Yahoo Finance וכותב את `data.json` שהדף מציג. |
+| `check_trends.py` | בודק ההתראות — מדפיס התראות חדשות בעברית (חדה / מגמה / חציית ממוצע 20). |
+| `data.json` | נוצר ע״י `fetch_snapshot.py`. לא כותבים בו ידנית. |
+| `.github/workflows/update-data.yml` | מרענן את `data.json` כל 6 שעות. |
+
+## הרצה
+
+```bash
+# יצירת / רענון קובץ הנתונים
+python3 fetch_snapshot.py
+
+# בדיקת התראות (מדפיס רק התראות חדשות, שקט כשאין)
+python3 check_trends.py
+```
+
+אין תלויות חיצוניות — שני הסקריפטים משתמשים בספריית התקן של פייתון בלבד (stdlib).
+נדרש חיבור אינטרנט ל־query1.finance.yahoo.com.
+
+## צפייה בדף
+
+מקומית: פותחים את `index.html` בדפדפן (הדף ינסה לקרוא את `data.json` שלידו; בלי שרת מקומי ייתכן שהדפדפן יחסום את הקריאה — במקרה כזה מריצים `python3 -m http.server` בתיקייה).
+
+GitHub Pages: ‏Settings → Pages → ‏Build and deployment → ‏Deploy from a branch → ‏Branch: `main`, ‏Folder: `/ (root)`. הדף יעלה ב־`https://itzikban.github.io/stocks/`.
+
+## תהליך עדכון כל 6 שעות
+
+1. ה־Action ‏(`update-data.yml`) רץ כל 6 שעות (וגם ידנית דרך `workflow_dispatch`), מריץ את `fetch_snapshot.py` ומקבל (commit) את `data.json` אם השתנה.
+2. בודק ההתראות (`check_trends.py`) רץ בנפרד ב־cron של ווטסאפ כל 6 שעות ושולח התראה רק כשיש איתות חדש. הוא לא כותב ל־`data.json`.
+3. שני המסלולים משתמשים באותם כללי איתות: תזוזה חדה ±3% ביום, תחילת מגמה = 3 ימים רצופים באותו כיוון עם 5%+ מצטבר, חציית ממוצע 20 ימים.
+
+## מלכודת אגורות בבורסת ת״א (TASE)
+
+ערכי Yahoo עבור `NXSN.TA` (נקסט ויז׳ן) עלולים להגיע באגורות במקום בשקלים.
+שני הסקריפטים מכילים בדיקת שפיות: אם המחיר האחרון מעל 1000 — מחלקים ב־100.
+(אוקטובר 2026: מחיר מאומת ~187.7 ₪, כך שערך מעל 1000 אינו הגיוני בשקלים.)
+החברות האחרות בטבלאות הישראליות (פניקס, מגדל, בית שמש, דיסקונט, מזרחי, הפועלים, לאומי, רציו) מופיעות כנתונים סטטיים מאומתים בלבד — לעולם לא כסימולי משיכה חיה.
+
+## לשונית ישראל · ערב מלחמה
+
+הכרטיסים החיים (אלביט, מדד ת״א 125, נקסט ויז׳ן) מגיעים מ־`data.json`.
+הטבלאות הסטטיות (בסיס מאומת 16.10.2026; חלון המלחמה 13–24 ביוני 2025) הן נתונים מאומתים ואינן מתעדכנות אוטומטית.
+
+## כתב ויתור · Disclaimer
+
+התרחישים בדף (מלחמה קצרה / מלחמה ממושכת) הם **דעה וספקולציה, לא עובדה ולא המלצה להשקעה**.
+The scenarios on the page (short war / prolonged war) are **opinion and speculation, not fact and not investment advice**.
