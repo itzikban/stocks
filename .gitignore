@@ -1,3 +1,6 @@
 __pycache__/
 alert-state.json
 .DS_Store
+node_modules/
+.next/
+.env*.local
