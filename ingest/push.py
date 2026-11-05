@@ -30,6 +30,29 @@ QUERY = {
 }
 
 
+# Google News rate-limits datacenter egress IPs with 503s that can arrive slowly.
+# Fail fast for the rest of the run instead of burning the whole time budget on it.
+_GOOGLE_NEWS_MAX_CONSECUTIVE_FAILURES = 3
+_google_news_state = {"failures": 0, "open": False}
+
+
+def _google_news_get(url):
+    if _google_news_state["open"]:
+        raise RuntimeError("google news circuit open (rate-limited earlier this run)")
+    try:
+        data = get(url, timeout=15)
+    except Exception:
+        _google_news_state["failures"] += 1
+        if _google_news_state["failures"] >= _GOOGLE_NEWS_MAX_CONSECUTIVE_FAILURES:
+            _google_news_state["open"] = True
+            print("ERROR google news circuit open after %d consecutive failures; "
+                  "skipping remaining Google News requests this run"
+                  % _google_news_state["failures"], file=sys.stderr, flush=True)
+        raise
+    _google_news_state["failures"] = 0
+    return data
+
+
 def get(url, data=None, headers=None, timeout=30):
     req = urllib.request.Request(url, data=data, headers={**UA, **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -81,7 +104,7 @@ def item(title, url, source, vendor, dt, tz=NY):
 def google_news(symbol, start, end):
     q = "%s after:%s before:%s" % (QUERY.get(symbol, symbol + " stock"), start, end)
     url = "https://news.google.com/rss/search?q=%s&hl=en-US&gl=US&ceid=US:en" % urllib.parse.quote(q)
-    root = ET.fromstring(get(url))
+    root = ET.fromstring(_google_news_get(url))
     out = []
     for it in root.iter("item"):
         src = it.find("source")
@@ -104,7 +127,7 @@ REQUIRE_HE = {"ESLT": r"אלביט|elbit", "^TA125.TA": r"ת%sא|תל.אביב|�
 def google_news_he(symbol, name, start, end):
     q = "%s after:%s before:%s" % (QUERY_HE.get(symbol, name), start, end)
     url = "https://news.google.com/rss/search?q=%s&hl=he&gl=IL&ceid=IL:he" % urllib.parse.quote(q)
-    root = ET.fromstring(get(url))
+    root = ET.fromstring(_google_news_get(url))
     out = []
     for it in root.iter("item"):
         src = it.find("source")
@@ -175,8 +198,8 @@ def news_for(symbol, backfill_days, moves=None, market="US", name=""):
     failures = []
     today = datetime.now(NY).date()
     items = []
-    span = 5 if backfill_days > 5 else 3
     n_days = backfill_days if backfill_days else 3
+    span = 5 if backfill_days > 5 else n_days + 1
     end = today + timedelta(days=1)
     start_limit = today - timedelta(days=n_days)
     while end > start_limit:
